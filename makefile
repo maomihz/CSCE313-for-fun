@@ -1,17 +1,17 @@
 # makefile
-CC = g++
+CC = gcc
 TARGET = memtest
 
 .PHONY: all run clean
 
-all: memtest
+all: $(TARGET)
 
 %.o: %.c
 	$(CC) -c -g -o $@ $<
 
 
-ackerman.o: ackerman.c
-my_allocator.o : my_allocator.c
+ackerman.o: ackerman.c ackerman.h
+my_allocator.o : my_allocator.c my_allocator.h
 memtest.o : memtest.c
 
 
@@ -19,7 +19,7 @@ $(TARGET): memtest.o ackerman.o my_allocator.o
 	$(CC) -o $@ $^
 
 run: $(TARGET)
-	./$(TARGET)
+	@./$(TARGET)
 
 clean:
 	$(RM) *.o $(TARGET)

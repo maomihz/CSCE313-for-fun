@@ -1,0 +1,23 @@
+# makefile
+CC = gcc
+CFLAGS = -g -Wall
+
+TARGET = test
+
+.PHONY: all run clean
+
+all: $(TARGET)
+
+%.o: %.c
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+test.o : test.c
+
+$(TARGET): test.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+run: $(TARGET)
+	@./$(TARGET)
+
+clean:
+	$(RM) *.o $(TARGET)
