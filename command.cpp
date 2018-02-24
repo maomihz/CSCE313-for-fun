@@ -97,7 +97,7 @@ Command::Command(string cmd)
           arglist.clear();
         }
         // & also signals the end
-        else if (c == '&') {
+        if (c == '&') {
           background = true;
           break;
         }

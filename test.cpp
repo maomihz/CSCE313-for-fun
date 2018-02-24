@@ -18,7 +18,7 @@ vector<string> cases = {
   "ps -a | awk '/pts\\/[0-9]/{print $1}' | tail -5",
   "ls -l /proc/sys | awk '{print $9}' | sort -r | head -5",
   "dd if=/dev/zero of=/dev/null bs=1024 count=10485760 & hello world",
-  "pwd > pwd.txt",
+  "pwd > pwd.txt &",
   "echo \"<<<<< Optional... >>>>>\"",
   "cat /proc/$(ps|grep bash|head -1|awk '{print $1}')/status"
 };
