@@ -20,6 +20,16 @@ char cd_last[1024];
 
 
 void checkbg() {
+    int status;
+    auto i = bg_process.begin();
+    while (i != bg_process.end()) {
+      if (waitpid(*i,&status,WNOHANG)) {
+        bg_process.erase(i);
+        cerr << "[shell] PID=" << *i << " exit " << status << endl;
+      } else {
+        ++i;
+      }
+    }
 }
 
 string exec_out(char* const* cmd) {
@@ -41,6 +51,7 @@ string exec_out(char* const* cmd) {
 }
 
 int main(int argc, char** argv) {
+  atexit(checkbg);
 
   // Parse arguments
   char c;
@@ -60,17 +71,17 @@ int main(int argc, char** argv) {
     // Gather infomations
 
     // Printing the prompt
-    char* arl1[] = {(char*)"date", (char*)"+%F", NULL};
-    string prompt_date = exec_out(arl1);
-
-    char* arl2[] = {(char*)"pwd", NULL};
-    string prompt_pwd = exec_out(arl2);
-
-    char* arl3[] = {(char*)"whoami", NULL};
-    string prompt_whoami = exec_out(arl3);
-
-    char* arl4[] = {(char*)"date", (char*)"+%T", NULL};
-    string prompt_time = exec_out(arl4);
+    // char* arl1[] = {(char*)"date", (char*)"+%F", NULL};
+    // string prompt_date = exec_out(arl1);
+    //
+    // char* arl2[] = {(char*)"pwd", NULL};
+    // string prompt_pwd = exec_out(arl2);
+    //
+    // char* arl3[] = {(char*)"whoami", NULL};
+    // string prompt_whoami = exec_out(arl3);
+    //
+    // char* arl4[] = {(char*)"date", (char*)"+%T", NULL};
+    // string prompt_time = exec_out(arl4);
 
     string prompt = PS1;
     cout << prompt;
@@ -88,7 +99,8 @@ int main(int argc, char** argv) {
     try {
       Command c(cmd);
       int n = c.cmdlist.size();
-      if (n <= 0) {
+
+      if (n <= 0 || (n == 1 && c.cmdlist.at(0).size() <= 0)) {
         checkbg();
         continue;
       }
@@ -126,6 +138,16 @@ int main(int argc, char** argv) {
             if (chdir(dir.c_str()) < 0) {
               throw runtime_error("cd: Error changing directory");
             };
+          }
+          checkbg();
+          continue;
+        }
+        if (arg.at(0) == "jobs") {
+          checkbg();
+          auto i = bg_process.begin();
+          while (i != bg_process.end()) {
+            cout << "[job]: PID="<< *i << endl;
+            ++i;
           }
           continue;
         }
