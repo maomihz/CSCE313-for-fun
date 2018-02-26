@@ -16,39 +16,25 @@ using namespace std;
 
 string PS1 = "\x1b[36m$\x1b[0m ";
 vector<pid_t> bg_process;
+pid_t main_pid = getpid();
 char cd_last[1024];
 
 
 void checkbg() {
-    int status;
-    auto i = bg_process.begin();
-    while (i != bg_process.end()) {
-      if (waitpid(*i,&status,WNOHANG)) {
-        bg_process.erase(i);
-        cerr << "[shell] PID=" << *i << " exit " << status << endl;
-      } else {
-        ++i;
-      }
+  if (getpid() != main_pid) {
+    return;
+  }
+  int status;
+  auto i = bg_process.begin();
+  while (i != bg_process.end()) {
+    if (waitpid(*i,&status,WNOHANG)) {
+      bg_process.erase(i);
+      cerr <<  "[Process] PID=" << *i << " exit " << status << endl;
+    } else {
+      ++i;
     }
+  }
 }
-
-// string exec_out(char* const* cmd) {
-//   int fds[2];
-//   pipe(fds);
-//
-//   pid_t p;
-//   int stat;
-//   if (!(p = fork())) {
-//     dup2 (fds[1], 1);
-//     execvp(cmd[0], cmd);
-//   }
-//
-//   char buf[1024];
-//   read(fds[0], buf, 1024);
-//   string result = buf;
-//   waitpid(p, &stat, 0);
-//   return result;
-// }
 
 int runcmd(string cmd) {
   Command c(cmd);
@@ -193,25 +179,42 @@ int main(int argc, char** argv) {
     // Gather infomations
     if (special_prompt) {
       // Who Am I
-      printf("\n\033[35m#\x1b[0m \x1b[36m");
-      fflush(stdout);
-      runcmd("whoami | tr -d '\n'");
-      printf("\x1b[0m @ ");
-      fflush(stdout);
+      int fds[2];
+      pipe(fds);
 
-      // Date
-      printf("\x1b[32m");
-      fflush(stdout);
-      runcmd("date '+%F %T' | tr -d '\n'");
-      printf("\x1b[0m at ");
-      fflush(stdout);
+      pid_t prompt_process = fork();
+      if (!prompt_process) {
+        dup2(fds[1], 1);
+        printf("\n\033[35m#\x1b[0m \x1b[36m");
+        fflush(stdout);
+        runcmd("whoami | tr -d '\n'");
+        printf("\x1b[0m @ ");
+        fflush(stdout);
 
-      // pwd
-      printf("\x1b[33m");
-      fflush(stdout);
-      runcmd("pwd | tr -d '\n'");
-      printf("\x1b[0m \n");
-      fflush(stdout);
+        // Date
+        printf("\x1b[32m");
+        fflush(stdout);
+        runcmd("date '+%F %T' | tr -d '\n'");
+        printf("\x1b[0m at ");
+        fflush(stdout);
+
+        // pwd
+        printf("\x1b[33m");
+        fflush(stdout);
+        runcmd("pwd | tr -d '\n'");
+        printf("\x1b[0m \n");
+        fflush(stdout);
+        close(fds[1]);
+        close(fds[0]);
+        exit(1);
+      }
+      int status;
+      waitpid(prompt_process, &status, 0);
+      char buffer[1024];
+      read (fds[0], buffer, 1024);
+      close(fds[0]);
+      close(fds[1]);
+      cout << buffer;
     }
 
     string prompt = PS1;
