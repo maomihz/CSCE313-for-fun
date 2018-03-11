@@ -217,7 +217,7 @@ void* request_thread_function(void* arg)
   user_info* u = (user_info*)arg;
 
   for (int i = 0; i < u->count; ++i) {
-    u->buffer->push_back("data " + u->name);
+    u->buffer->push_back(u->name);
   }
   return NULL;
 }
@@ -354,9 +354,9 @@ int main(int argc, char* argv[])
     pthread_t client_thread2;
     pthread_t client_thread3;
 
-    user_info user1(&request_buffer, n, "John Smith");
-    user_info user2(&request_buffer, n, "Jane Smith");
-    user_info user3(&request_buffer, n, "Joe Smith");
+    user_info user1(&request_buffer, n, "data John Smith");
+    user_info user2(&request_buffer, n, "data Jane Smith");
+    user_info user3(&request_buffer, n, "data Joe Smith");
 
     pthread_create(&client_thread1, NULL, request_thread_function, &user1);
     pthread_create(&client_thread2, NULL, request_thread_function, &user2);
@@ -377,6 +377,9 @@ int main(int argc, char* argv[])
     /*-------------------------------------------*/
     /* START TIMER HERE */
     /*-------------------------------------------*/
+    timespec start_time, stop_time;
+    clock_gettime(CLOCK_REALTIME, &start_time);
+
 
     pthread_t workers[w];
     task_info task(&request_buffer, &response_counter, chan);
@@ -387,6 +390,8 @@ int main(int argc, char* argv[])
     for (int i = 0; i < w; ++i) {
       pthread_join(workers[i], NULL);
     }
+
+
 
     /*--------------------------------------------------------------------------*/
     /*  END CRITICAL SECTION  */
@@ -404,6 +409,9 @@ int main(int argc, char* argv[])
     /*-------------------------------------------*/
     /* END TIMER HERE   */
     /*-------------------------------------------*/
+    clock_gettime(CLOCK_REALTIME, &stop_time);
+    long long time_usec = (stop_time.tv_nsec - start_time.tv_nsec) / 1000L
+      + (stop_time.tv_sec - start_time.tv_sec) * 1000000L;
 
     /*
       You may want to eventually add file output
@@ -420,7 +428,7 @@ int main(int argc, char* argv[])
     std::vector<int> john_frequency_count(10, 0);
     std::vector<int> jane_frequency_count(10, 0);
     std::vector<int> joe_frequency_count(10, 0);
-    
+
     for (int i = 0; i < 10; ++i) {
       john_frequency_count.at(i) = response_counter.count("John", i);
       jane_frequency_count.at(i) = response_counter.count("Jane", i);
@@ -453,6 +461,7 @@ int main(int argc, char* argv[])
     std::string finale = chan->send_request("quit");
     delete chan;
     std::cout << "Finale: " << finale << std::endl; //This line, however, is optional.
+    std::cout << "Running Time: " << time_usec << " (microseconds)" << std::endl;
   }
   else if (pid == 0)
     execl("dataserver", (char*)NULL);
