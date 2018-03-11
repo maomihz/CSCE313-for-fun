@@ -216,20 +216,6 @@ void* request_thread_function(void* arg)
 {
   user_info* u = (user_info*)arg;
 
-  /*
-  Fill in this function.
-
-  The loop body should require only a single line of code.
-  The loop conditions should be somewhat intuitive.
-
-  In both thread functions, the arg parameter
-  will be used to pass parameters to the function.
-  One of the parameters for the request thread
-  function MUST be the name of the "patient" for whom
-  the data requests are being pushed: you MAY NOT
-  create 3 copies of this function, one for each "patient".
-   */
-
   for (int i = 0; i < u->count; ++i) {
     u->buffer->push_back("data " + u->name);
   }
@@ -279,7 +265,7 @@ int main(int argc, char* argv[])
     That is far too large for a single thread to accomplish quickly.
   */
   int n = 100; //default number of requests per "patient"
-  int w = 1;   //default number of worker threads
+  int w = 3;   //default number of worker threads
   int opt = 0;
   while ((opt = getopt(argc, argv, "n:w:h")) != -1) {
     switch (opt) {
@@ -394,6 +380,7 @@ int main(int argc, char* argv[])
 
     pthread_t workers[w];
     task_info task(&request_buffer, &response_counter, chan);
+
     for (int i = 0; i < w; ++i) {
       pthread_create(&workers[i], NULL, worker_thread_function, &task);
     }
@@ -433,6 +420,7 @@ int main(int argc, char* argv[])
     std::vector<int> john_frequency_count(10, 0);
     std::vector<int> jane_frequency_count(10, 0);
     std::vector<int> joe_frequency_count(10, 0);
+    
     for (int i = 0; i < 10; ++i) {
       john_frequency_count.at(i) = response_counter.count("John", i);
       jane_frequency_count.at(i) = response_counter.count("Jane", i);

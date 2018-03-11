@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <queue>
 #include <string>
-#include <list>
 #include <pthread.h>
 #include <unordered_map>
 
@@ -35,7 +34,7 @@ public:
   std::string retrieve_front();
 private:
 	pthread_mutex_t mtx;
-  std::list<std::string> vec;
+  std::queue<std::string> vec;
 };
 
 

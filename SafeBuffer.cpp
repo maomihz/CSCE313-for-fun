@@ -25,7 +25,7 @@ int SafeBuffer::size() {
 
 void SafeBuffer::push_back(std::string str) {
   pthread_mutex_lock(&mtx);
-  vec.push_back(str);
+  vec.push(str);
   pthread_mutex_unlock(&mtx);
   return;
 }
@@ -33,7 +33,7 @@ void SafeBuffer::push_back(std::string str) {
 std::string SafeBuffer::retrieve_front() {
   pthread_mutex_lock(&mtx);
   std::string s = vec.front();
-  vec.pop_front();
+  vec.pop();
   pthread_mutex_unlock(&mtx);
   return s;
 }
