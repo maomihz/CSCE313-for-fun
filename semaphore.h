@@ -1,14 +1,14 @@
-/* 
-    File: semaphore.H
+/*
+  File: semaphore.H
 
-    Author: R. Bettati
-            Department of Computer Science
-            Texas A&M University
-    Date  : 08/02/11
+  Author: R. Bettati
+      Department of Computer Science
+      Texas A&M University
+  Date  : 08/02/11
 
 */
 
-#ifndef _semaphore_H_                   // include file only once
+#ifndef _semaphore_H_           // include file only once
 #define _semaphore_H_
 
 /*--------------------------------------------------------------------------*/
@@ -24,13 +24,13 @@
 #include <pthread.h>
 
 /*--------------------------------------------------------------------------*/
-/* DATA STRUCTURES */ 
+/* DATA STRUCTURES */
 /*--------------------------------------------------------------------------*/
 
 /* -- (none) -- */
 
 /*--------------------------------------------------------------------------*/
-/* FORWARDS */ 
+/* FORWARDS */
 /*--------------------------------------------------------------------------*/
 
 /* -- (none) -- */
@@ -41,27 +41,62 @@
 
 class semaphore {
 private:
-    /* -- INTERNAL DATA STRUCTURES */
+  /* -- INTERNAL DATA STRUCTURES */
+  pthread_mutex_t mutex;  // mutex
+  pthread_cond_t cond;    // wait queue
+  int counter;            // counter
 
 public:
 
-    /* -- CONSTRUCTOR/DESTRUCTOR */
+  /* -- CONSTRUCTOR/DESTRUCTOR */
 
-    semaphore(int _val) {
-	}
+  semaphore(int _val)
+  : counter(_val) {
+    pthread_mutex_init(&mutex, NULL);
+    pthread_cond_init(&cond, NULL);
+  }
 
-    ~semaphore(){
+  ~semaphore(){
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
+  }
+
+  /* -- SEMAPHORE OPERATIONS */
+
+  // P = decrement counter, retrieve resource
+  void P() {
+    // Lock mutex
+    pthread_mutex_lock(&mutex);
+    // Decrement counter
+    counter--;
+
+    // if counter below zero then wait
+    if (counter < 0) {
+      pthread_cond_wait(&cond, &mutex);
+    }
+    // Upon receiving signal, release
+    pthread_mutex_unlock(&mutex);
+  }
+
+  // V = increment counter, add resource
+  void V() {
+    // Lock mutex
+    pthread_mutex_lock(&mutex);
+    counter++;
+
+    // If counter become 0
+    if (counter == 0) {
+      pthread_cond_broadcast(&cond);
     }
 
-    /* -- SEMAPHORE OPERATIONS */
-    
-    void P() {
-    }
+    // And then release
+    pthread_mutex_unlock(&mutex);
+  }
 
-    void V() {
-    }
+  // Return the value of counter, debug purpose
+  int val() {
+    return counter;
+  }
 };
 
 #endif
-
-

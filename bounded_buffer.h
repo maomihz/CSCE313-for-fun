@@ -1,6 +1,6 @@
 //
 //  bounded_buffer.hpp
-//  
+//
 //
 //  Created by Joshua Higginbotham on 11/4/15.
 //
@@ -16,7 +16,12 @@
 #include "semaphore.h"
 
 class bounded_buffer {
-	/* Internal data here */
+private:
+  std::queue<std::string> buffer;
+  semaphore full;
+  semaphore empty;
+  pthread_mutex_t mutex;
+
 public:
     bounded_buffer(int _capacity);
     void push_back(std::string str);
