@@ -57,6 +57,7 @@
  */
 
 #include "bounded_buffer.h"
+#include "safecounter.h"
 
 /*--------------------------------------------------------------------------*/
 /* DATA STRUCTURES */
@@ -86,10 +87,12 @@ struct PARAMS_WORKER {
 
 struct PARAMS_STAT {
   bounded_buffer* buffer;
+  std::string name;
   int count;
+  SafeCounter* counter;
 
-  PARAMS_STAT(bounded_buffer* buffer, int count)
-    : buffer(buffer), count(count) {}
+  PARAMS_STAT(bounded_buffer* buffer, std::string name, int count, SafeCounter* counter)
+    : buffer(buffer), name(name), count(count), counter(counter) {}
 };
 
 /*
@@ -177,7 +180,7 @@ void* stat_thread_function(void* arg) {
 
   for (int i = 0; i < a->count; ++i) {
     std::string s = a->buffer->retrieve_front();
-    std::cout << s << std::endl;
+    a->counter->inc(a->name, stoi(s) / 10);
   }
   return NULL;
 }
@@ -243,6 +246,7 @@ int main(int argc, char * argv[]) {
 
         // Create our main buffer first!
         bounded_buffer main_buffer(b);
+        SafeCounter response_counter;
 
         // Create the response buffers
         std::unordered_map<std::string, bounded_buffer*> patients_responses;
@@ -250,17 +254,19 @@ int main(int argc, char * argv[]) {
         patients_responses["data Jane Smith"] = new bounded_buffer(b);
         patients_responses["data Joe Smith" ] = new bounded_buffer(b);
 
+        // Create the threads
         pthread_t requests[3];
         pthread_t workers[w];
         pthread_t stats[3];
 
+        // Create the data structures
         PARAMS_request user1(&main_buffer, n, "data John Smith");
         PARAMS_request user2(&main_buffer, n, "data Jane Smith");
         PARAMS_request user3(&main_buffer, n, "data Joe Smith" );
         PARAMS_WORKER  task (&main_buffer, chan, &patients_responses);
-        PARAMS_STAT    stat1(patients_responses.at("data John Smith"), n);
-        PARAMS_STAT    stat2(patients_responses.at("data Jane Smith"), n);
-        PARAMS_STAT    stat3(patients_responses.at("data Joe Smith" ), n);
+        PARAMS_STAT    stat1(patients_responses.at("data John Smith"), "John", n, &response_counter);
+        PARAMS_STAT    stat2(patients_responses.at("data Jane Smith"), "Jane", n, &response_counter);
+        PARAMS_STAT    stat3(patients_responses.at("data Joe Smith" ), "Joe" , n, &response_counter);
 
         // Spawn threads
         pthread_create(&requests[0], NULL, request_thread_function, &user1);
@@ -275,12 +281,16 @@ int main(int argc, char * argv[]) {
         pthread_create(&stats[1], NULL, stat_thread_function, &stat2);
         pthread_create(&stats[2], NULL, stat_thread_function, &stat3);
 
+        // Start timer!!
+        gettimeofday(&start_time, NULL);
+
 
         // Join the threads and push quit
         for (int i = 0; i < 3; ++i) {
           pthread_join(requests[i], NULL);
         }
 
+        // Push the quit requests
         for (int i = 0; i < w; ++i) {
           main_buffer.push_back("quit");
         }
@@ -295,11 +305,40 @@ int main(int argc, char * argv[]) {
           pthread_join(stats[i], NULL);
         }
 
+        // End timer!!
+        gettimeofday(&finish_time, NULL);
+        start_usecs = start_time.tv_sec * 1000000L + start_time.tv_usec;
+        finish_usecs = finish_time.tv_sec * 1000000L + finish_time.tv_usec;
+
+        // End
+        delete patients_responses["data John Smith"];
+        delete patients_responses["data Jane Smith"];
+        delete patients_responses["data Joe Smith" ];
+
+
+        // Draw histogram
+        std::vector<int> john_frequency_count(10, 0);
+        std::vector<int> jane_frequency_count(10, 0);
+        std::vector<int> joe_frequency_count(10, 0);
+        for (int i = 0; i < 10; ++i) {
+          john_frequency_count.at(i) = response_counter.count("John", i);
+          jane_frequency_count.at(i) = response_counter.count("Jane", i);
+          joe_frequency_count.at(i) = response_counter.count("Joe", i);
+        }
+
+        std::cout << make_histogram("John", &john_frequency_count) << std::endl;
+        std::cout << make_histogram("Jane", &jane_frequency_count) << std::endl;
+        std::cout << make_histogram("Joe", &joe_frequency_count) << std::endl;
+
         ofs.close();
         std::cout << "Sleeping..." << std::endl;
         usleep(10000);
         std::string finale = chan->send_request("quit");
         std::cout << "Finale: " << finale << std::endl;
+
+        std::cout << "Running time: " << finish_usecs - start_usecs << std::endl;
+
+
 
     }
 	else if (pid == 0)

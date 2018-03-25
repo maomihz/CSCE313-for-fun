@@ -85,8 +85,8 @@ public:
     counter++;
 
     // If counter become 0
-    if (counter == 0) {
-      pthread_cond_broadcast(&cond);
+    if (counter <= 0) {
+      pthread_cond_signal(&cond);
     }
 
     // And then release
