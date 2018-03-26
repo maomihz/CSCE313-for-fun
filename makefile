@@ -1,7 +1,7 @@
 # makefile
 CC = g++
 CFLAGS = -g -std=c++11
-LDFLAGS = -lpthread
+LDFLAGS = -lpthread -lrt
 
 all: dataserver client
 

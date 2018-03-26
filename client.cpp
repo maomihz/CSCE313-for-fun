@@ -50,6 +50,9 @@
 #include <numeric>
 #include <vector>
 #include <unordered_map>
+#include <time.h>
+#include <signal.h>
+#include <iomanip>
 #include "reqchannel.h"
 /*
     This next file will need to be written from scratch, along with
@@ -133,6 +136,37 @@ std::string make_histogram(std::string name, std::vector<int> *data) {
     return results;
 }
 
+std::string make_histogram_table(std::string name1, std::string name2,
+  std::string name3, std::vector<int>* data1, std::vector<int>* data2,
+  std::vector<int>* data3)
+{
+  std::stringstream tablebuilder;
+  tablebuilder << std::setw(25) << std::right << name1;
+  tablebuilder << std::setw(15) << std::right << name2;
+  tablebuilder << std::setw(15) << std::right << name3 << std::endl;
+  for (int i = 0; i < data1->size(); ++i) {
+    tablebuilder << std::setw(10) << std::left
+           << std::string(
+              std::to_string(i * 10) + "-"
+              + std::to_string((i * 10) + 9));
+    tablebuilder << std::setw(15) << std::right
+           << std::to_string(data1->at(i));
+    tablebuilder << std::setw(15) << std::right
+           << std::to_string(data2->at(i));
+    tablebuilder << std::setw(15) << std::right
+           << std::to_string(data3->at(i)) << std::endl;
+  }
+  tablebuilder << std::setw(10) << std::left << "Total";
+  tablebuilder << std::setw(15) << std::right
+         << accumulate(data1->begin(), data1->end(), 0);
+  tablebuilder << std::setw(15) << std::right
+         << accumulate(data2->begin(), data2->end(), 0);
+  tablebuilder << std::setw(15) << std::right
+         << accumulate(data3->begin(), data3->end(), 0) << std::endl;
+
+  return tablebuilder.str();
+}
+
 
 // The request thread function pushes a number of the same request to the buffer.
 // Usually three patient requires spawning three request threads, easy filling
@@ -183,6 +217,30 @@ void* stat_thread_function(void* arg) {
     a->counter->inc(a->name, stoi(s) / 10);
   }
   return NULL;
+}
+
+void livedisplay_handler (int signo, siginfo_t* info, void* context)
+{
+  static int count = 0;
+  SafeCounter* counter = (SafeCounter*)(info->si_value.sival_ptr);
+
+  std::vector<int> john_frequency_count(10, 0);
+  std::vector<int> jane_frequency_count(10, 0);
+  std::vector<int> joe_frequency_count(10, 0);
+  for (int i = 0; i < 10; ++i) {
+    john_frequency_count.at(i) = counter->count("John", i);
+    jane_frequency_count.at(i) = counter->count("Jane", i);
+    joe_frequency_count.at(i) = counter->count("Joe", i);
+  }
+  std::string histogram_table = make_histogram_table("John Smith",
+      "Jane Smith", "Joe Smith", &john_frequency_count,
+      &jane_frequency_count, &joe_frequency_count);
+   printf( "\033[;H" );
+  std::cout << histogram_table << std::endl;
+
+ // std::cout << make_histogram("John", &john_frequency_count) << std::endl;
+ // std::cout << make_histogram("Jane", &jane_frequency_count) << std::endl;
+ // std::cout << make_histogram("Joe", &joe_frequency_count) << std::endl;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -281,6 +339,37 @@ int main(int argc, char * argv[]) {
         pthread_create(&stats[1], NULL, stat_thread_function, &stat2);
         pthread_create(&stats[2], NULL, stat_thread_function, &stat3);
 
+
+
+        // Start the live display
+        struct sigaction sa;
+        struct sigevent sev;
+        timer_t timerid;
+
+        sa.sa_flags = SA_SIGINFO;
+        sa.sa_sigaction = &livedisplay_handler;
+        sigaction (SIGALRM, &sa, NULL);
+
+        sev.sigev_value.sival_int = 123;
+        sev.sigev_value.sival_ptr = &response_counter;
+        sev.sigev_notify = SIGEV_SIGNAL;
+        sev.sigev_notify_attributes = NULL;
+        sev.sigev_signo = SIGALRM;
+
+        timer_create(CLOCK_REALTIME, &sev, &timerid);
+
+        struct itimerspec value;
+        value.it_interval.tv_sec = 1;
+        value.it_interval.tv_nsec = 0;
+        value.it_value.tv_sec = 1;
+        value.it_value.tv_nsec = 0;
+
+        timer_settime(timerid, 0, &value, NULL);
+
+        // Lots of work
+        printf("\033[2J");
+
+
         // Start timer!!
         gettimeofday(&start_time, NULL);
 
@@ -305,6 +394,7 @@ int main(int argc, char * argv[]) {
           pthread_join(stats[i], NULL);
         }
 
+        timer_delete(timerid);
         // End timer!!
         gettimeofday(&finish_time, NULL);
         start_usecs = start_time.tv_sec * 1000000L + start_time.tv_usec;

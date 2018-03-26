@@ -15,6 +15,8 @@
 #include <vector>
 #include <unordered_map>
 #include "reqchannel.h"
+#include <signal.h>
+#include <time.h>
 /*
     This next file will need to be written from scratch, along with
     semaphore.h and (if you choose) their corresponding .cpp files.
@@ -53,7 +55,47 @@ void* buffer_func(void* arg) {
   return NULL;
 }
 
+void timer_handler (int signo, siginfo_t* info, void* context)
+{
+ static int count = 0;
+ int i = info->si_value.sival_int;
+ printf ("%d timer expired %d times\n", i, ++count);
+}
+
 int main() {
+  struct sigaction sa;
+  struct sigevent sev;
+  timer_t timerid;
+
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = &timer_handler;
+  sigaction (SIGALRM, &sa, NULL);
+
+  sev.sigev_value.sival_int = 123;
+  sev.sigev_notify = SIGEV_SIGNAL;
+  sev.sigev_notify_attributes = NULL;
+  sev.sigev_signo = SIGALRM;
+
+  timer_create(CLOCK_REALTIME, &sev, &timerid);
+
+  struct itimerspec value;
+  value.it_interval.tv_sec = 1;
+  value.it_interval.tv_nsec = 0;
+  value.it_value.tv_sec = 1;
+  value.it_value.tv_nsec = 0;
+
+  timer_settime(timerid, 0, &value, NULL);
+
+  // Lots of work
+  for (long long i = 0; i < 5000000000L; ++i);
+
+  timer_delete(timerid);
+  for (long long i = 0; i < 5000000000L; ++i);
+
+}
+
+
+int bmain() {
   // Test the basic semaphore
 
   pthread_t test_thread;
