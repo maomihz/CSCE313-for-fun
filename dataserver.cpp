@@ -1,4 +1,4 @@
-/* 
+/*
     File: dataserver.C
 
     Author: R. Bettati
@@ -34,7 +34,7 @@
 #include "reqchannel.h"
 
 /*--------------------------------------------------------------------------*/
-/* DATA STRUCTURES */ 
+/* DATA STRUCTURES */
 /*--------------------------------------------------------------------------*/
 
     /* -- (none) -- */
@@ -72,14 +72,14 @@ void * handle_data_requests(void * args) {
 
 	RequestChannel * data_channel =  (RequestChannel*)args;
 
-	// -- Handle client requests on this channel. 
+	// -- Handle client requests on this channel.
 
 	handle_process_loop(*data_channel);
 
 	// -- Client has quit. We remove channel.
 
 	delete data_channel;
-	
+
 	return nullptr;
 }
 
@@ -98,7 +98,7 @@ void process_data(RequestChannel & _channel, const std::string &  _request) {
 }
 
 void process_newthread(RequestChannel & _channel, const std::string & _request) {
-  pthread_mutex_lock(&channel_mutex);	
+  pthread_mutex_lock(&channel_mutex);
   int error;
   nthreads ++;
 
@@ -124,8 +124,8 @@ void process_newthread(RequestChannel & _channel, const std::string & _request) 
 			delete data_channel;
 		}
 	}
-	catch (sync_lib_exception sle) {
-		perror(std::string(sle.what()).c_str());
+	catch (...) {
+		perror("hello, error");
 	}
 
 }
@@ -151,7 +151,7 @@ void process_request(RequestChannel & _channel, const std::string & _request) {
 }
 
 void handle_process_loop(RequestChannel & _channel) {
-	
+
 	for(;;) {
 		//std::cout << "Reading next request from channel (" << _channel.name() << ") ..." << std::flush;
 		std::cout << std::flush;
@@ -182,4 +182,3 @@ int main(int argc, char * argv[]) {
 
 	handle_process_loop(control_channel);
 }
-
