@@ -3,7 +3,8 @@ CC = g++
 CFLAGS = -g -std=c++11 -Wno-nonnull
 LDFLAGS = -lpthread -lrt
 
-all: shm
+all: pipe mq shm
+
 pipe: dataserver client
 mq: mqdataserver mqclient
 shm: shmdataserver shmclient
@@ -53,3 +54,6 @@ shmclient.cpp: client.cpp
 
 clean:
 	$(RM) *.o fifo* *dataserver *client test mqdataserver.cpp mqclient.cpp shmdataserver.cpp shmclient.cpp
+
+ipcrm:
+	ipcrm --all || true
