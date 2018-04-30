@@ -55,7 +55,7 @@
 #include <iomanip>
 #include <stdexcept>
 #include <sys/select.h>
-#include "reqchannel.h"
+#include "netreqchannel.h"
 /*
     This next file will need to be written from scratch, along with
     semaphore.h and (if you choose) their corresponding .cpp files.
@@ -84,13 +84,13 @@ struct PARAMS_request {
 struct PARAMS_WORKER {
   int w;
   bounded_buffer* buffer;
-  RequestChannel* chan;
+  std::string host, port;
   std::unordered_map<std::string, bounded_buffer*>* responses;
 
 
-  PARAMS_WORKER(int w, bounded_buffer* buffer, RequestChannel* chan,
+  PARAMS_WORKER(int w, bounded_buffer* buffer, std::string host, std::string port,
     std::unordered_map<std::string, bounded_buffer*>* responses)
-    : w(w), buffer(buffer), chan(chan), responses(responses) {}
+    : w(w), buffer(buffer), host(host), port(port), responses(responses) {}
 };
 
 struct PARAMS_STAT {
@@ -194,7 +194,7 @@ void* worker_thread_function(void* arg) {
 
   // Setup basic structures
   std::string requests[w];
-  RequestChannel* workerChannels[w];
+  NetworkRequestChannel* workerChannels[w];
 
   // setup select() structures
   fd_set fds;
@@ -204,9 +204,8 @@ void* worker_thread_function(void* arg) {
   // Initialize request channels
   FD_ZERO(&fds);
   for (int i = 0; i < w; ++i) {
-    std::string s = a->chan->send_request("newthread");
-    workerChannels[i] = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
-    int fd = workerChannels[i]->read_fd();
+    workerChannels[i] = new NetworkRequestChannel(a->host, a->port);
+    int fd = workerChannels[i]->socket_fd();
     if (fd > max_fd) {
       max_fd = fd;
     }
@@ -235,7 +234,7 @@ void* worker_thread_function(void* arg) {
       if (workerChannels[i] == NULL) {
         continue;
       }
-      if (FD_ISSET(workerChannels[i]->read_fd(), &fds)) {
+      if (FD_ISSET(workerChannels[i]->socket_fd(), &fds)) {
         std::string response = workerChannels[i]->cread();
         if (requests[i] == "quit") {
           delete workerChannels[i];
@@ -259,7 +258,7 @@ void* worker_thread_function(void* arg) {
       if (workerChannels[i] == NULL) {
         continue;
       }
-      int fd = workerChannels[i]->read_fd();
+      int fd = workerChannels[i]->socket_fd();
       FD_SET(fd, &fds);
       if (fd > max_fd) {
         max_fd = fd;
@@ -280,6 +279,7 @@ void* stat_thread_function(void* arg) {
 
   for (int i = 0; i < a->count; ++i) {
     std::string s = a->buffer->retrieve_front();
+    // std::cout << "Response: "<< s << std::endl;
     a->counter->inc(a->name, stoi(s) / 10);
   }
   return NULL;
@@ -316,9 +316,11 @@ int main(int argc, char * argv[]) {
     int n = 10; //default number of requests per "patient"
     int b = 50; //default size of request_buffer
     int w = 10; //default number of worker threads
+    std::string server_host;
+    std::string server_port;
     bool USE_ALTERNATE_FILE_OUTPUT = false;
     int opt = 0;
-    while ((opt = getopt(argc, argv, "n:b:w:m:h")) != -1) {
+    while ((opt = getopt(argc, argv, "n:b:w:h:p:m")) != -1) {
         switch (opt) {
             case 'n':
                 n = atoi(optarg);
@@ -329,15 +331,23 @@ int main(int argc, char * argv[]) {
             case 'w':
                 w = atoi(optarg);
                 break;
+            case 'h':
+                server_host = optarg;
+                break;
+            case 'p':
+                server_port = optarg;
+                break;
             case 'm':
                 if(atoi(optarg) == 2) USE_ALTERNATE_FILE_OUTPUT = true;
                 break;
-            case 'h':
+            // case 'h':
             default:
                 std::cout << "This program can be invoked with the following flags:" << std::endl;
                 std::cout << "-n [int]: number of requests per patient" << std::endl;
                 std::cout << "-b [int]: size of request buffer" << std::endl;
                 std::cout << "-w [int]: number of worker threads" << std::endl;
+                std::cout << "-h [string]: name of server host" << std::endl;
+                std::cout << "-p [int]: port number of server host" << std::endl;
                 std::cout << "-m 2: use output2.txt instead of output.txt for all file output" << std::endl;
                 std::cout << "-h: print this message and quit" << std::endl;
                 std::cout << "Example: ./client_solution -n 10000 -b 50 -w 120 -m 2" << std::endl;
@@ -363,9 +373,9 @@ int main(int argc, char * argv[]) {
         std::cout << "w == " << w << std::endl;
 
         std::cout << "CLIENT STARTED:" << std::endl;
-        std::cout << "Establishing control channel... " << std::flush;
-        RequestChannel *chan = new RequestChannel("control", RequestChannel::CLIENT_SIDE);
-        std::cout << "done." << std::endl;
+        std::cout << "No need to establishing control channel... " << std::flush;
+        // NetworkRequestChannel *chan = new NetworkRequestChannel(server_host, server_port);
+        std::cout << "Not done." << std::endl;
 
 
         // Create our main buffer first!
@@ -387,7 +397,7 @@ int main(int argc, char * argv[]) {
         PARAMS_request user1(&main_buffer, n, "data John Smith");
         PARAMS_request user2(&main_buffer, n, "data Jane Smith");
         PARAMS_request user3(&main_buffer, n, "data Joe Smith" );
-        PARAMS_WORKER  task (w, &main_buffer, chan, &patients_responses);
+        PARAMS_WORKER  task (w, &main_buffer, server_host, server_port, &patients_responses);
         PARAMS_STAT    stat1(patients_responses.at("data John Smith"), "John", n, &response_counter);
         PARAMS_STAT    stat2(patients_responses.at("data Jane Smith"), "Jane", n, &response_counter);
         PARAMS_STAT    stat3(patients_responses.at("data Joe Smith" ), "Joe" , n, &response_counter);
@@ -485,14 +495,14 @@ int main(int argc, char * argv[]) {
         ofs.close();
         std::cout << "Sleeping..." << std::endl;
         usleep(10000);
-        std::string finale = chan->send_request("quit");
-        std::cout << "Finale: " << finale << std::endl;
+        // std::string finale = chan->send_request("quit");
+        // std::cout << "No Finale: " << finale << std::endl;
 
         std::cout << "Running time: " << finish_usecs - start_usecs << std::endl;
 
 
 
     }
-	else if (pid == 0)
-		execl("dataserver", NULL);
+	// else if (pid == 0)
+	// 	execl("dataserver -p 9999", NULL);
 }

@@ -1,4 +1,4 @@
-/* 
+/*
     File: dataserver.C
 
     Author: R. Bettati
@@ -31,10 +31,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "reqchannel.h"
+#include "netreqchannel.h"
 
 /*--------------------------------------------------------------------------*/
-/* DATA STRUCTURES */ 
+/* DATA STRUCTURES */
 /*--------------------------------------------------------------------------*/
 
     /* -- (none) -- */
@@ -47,7 +47,7 @@
 
 /*--------------------------------------------------------------------------*/
 /* VARIABLES */
-pthread_mutex_t channel_mutex;
+// pthread_mutex_t channel_mutex;
 /*--------------------------------------------------------------------------*/
 
 static int nthreads = 0;
@@ -56,117 +56,69 @@ static int nthreads = 0;
 /* FORWARDS */
 /*--------------------------------------------------------------------------*/
 
-void handle_process_loop(RequestChannel & _channel);
+void* handle_process_loop(void* _channel);
 
 /*--------------------------------------------------------------------------*/
 /* LOCAL FUNCTIONS -- SUPPORT FUNCTIONS */
 /*--------------------------------------------------------------------------*/
 
-	/* -- (none) -- */
+  /* -- (none) -- */
 
 /*--------------------------------------------------------------------------*/
 /* LOCAL FUNCTIONS -- THREAD FUNCTIONS */
 /*--------------------------------------------------------------------------*/
 
-void * handle_data_requests(void * args) {
-
-	RequestChannel * data_channel =  (RequestChannel*)args;
-
-	// -- Handle client requests on this channel. 
-
-	handle_process_loop(*data_channel);
-
-	// -- Client has quit. We remove channel.
-
-	delete data_channel;
-	
-	return nullptr;
-}
-
 /*--------------------------------------------------------------------------*/
 /* LOCAL FUNCTIONS -- INDIVIDUAL REQUESTS */
 /*--------------------------------------------------------------------------*/
 
-void process_hello(RequestChannel & _channel, const std::string & _request) {
-	_channel.cwrite("hello to you too");
+void process_hello(NetworkRequestChannel* _channel, const std::string & _request) {
+  _channel->cwrite("hello to you too");
 }
 
-void process_data(RequestChannel & _channel, const std::string &  _request) {
-	usleep(1000 + (rand() % 5000));
-	//_channel.cwrite("here comes data about " + _request.substr(4) + ": " + std::to_string(random() % 100));
-	_channel.cwrite(std::to_string(rand() % 100));
-}
-
-void process_newthread(RequestChannel & _channel, const std::string & _request) {
-  pthread_mutex_lock(&channel_mutex);	
-  int error;
-  nthreads ++;
-
-  // -- Name new data channel
-
-  std::string new_channel_name = "data" + std::to_string(nthreads) + "_";
-  //  std::cout << "new channel name = " << new_channel_name << endl;
-
-  // -- Pass new channel name back to client
-
-  _channel.cwrite(new_channel_name);
-  pthread_mutex_unlock(&channel_mutex);
-  // -- Construct new data channel (pointer to be passed to thread function)
-	try {
-		RequestChannel * data_channel = new RequestChannel(new_channel_name, RequestChannel::SERVER_SIDE);
-
-		// -- Create new thread to handle request channel
-
-		pthread_t thread_id;
-		//  std::cout << "starting new thread " << nthreads << endl;
-		if ((errno = pthread_create(& thread_id, NULL, handle_data_requests, data_channel)) != 0) {
-			perror(std::string("DATASERVER: " + _channel.name() + ": pthread_create failure").c_str());
-			delete data_channel;
-		}
-	}
-	catch (sync_lib_exception sle) {
-		perror(std::string(sle.what()).c_str());
-	}
-
+void process_data(NetworkRequestChannel* _channel, const std::string &  _request) {
+  usleep(1000 + (rand() % 5000));
+  int result = rand() % 100;
+  // std::cerr << "here comes data about " << _request << ":" << result << ";" << std::endl;
+  _channel->cwrite(std::to_string(result));
 }
 
 /*--------------------------------------------------------------------------*/
 /* LOCAL FUNCTIONS -- THE PROCESS REQUEST LOOP */
 /*--------------------------------------------------------------------------*/
 
-void process_request(RequestChannel & _channel, const std::string & _request) {
+void process_request(NetworkRequestChannel* _channel, const std::string & _request) {
+  // std::cout << "Get request: " << _request << std::endl;
 
-	if (_request.compare(0, 5, "hello") == 0) {
-		process_hello(_channel, _request);
-	}
-	else if (_request.compare(0, 4, "data") == 0) {
-		process_data(_channel, _request);
-	}
-	else if (_request.compare(0, 9, "newthread") == 0) {
-		process_newthread(_channel, _request);
-	}
-	else {
-		_channel.cwrite("unknown request");
-	}
+  if (_request.compare(0, 5, "hello") == 0) {
+    process_hello(_channel, _request);
+  }
+  else if (_request.compare(0, 4, "data") == 0) {
+    process_data(_channel, _request);
+  }
+  // else if (_request.compare(0, 9, "newthread") == 0) {
+  //   process_newthread(_channel, _request);
+  // }
+  else {
+    // std::cerr << "Unknown request:" << _request << std::endl;
+    _channel->cwrite("unknown request");
+  }
 }
 
-void handle_process_loop(RequestChannel & _channel) {
-	
-	for(;;) {
-		//std::cout << "Reading next request from channel (" << _channel.name() << ") ..." << std::flush;
-		std::cout << std::flush;
-		std::string request = _channel.cread();
-		//std::cout << " done (" << _channel.name() << ")." << endl;
-		//std::cout << "New request is " << request << endl;
+void* handle_process_loop(void* _channel) {
 
-		if (request.compare("quit") == 0) {
-			_channel.cwrite("bye");
-			usleep(10000);          // give the other end a bit of time.
-			break;                  // break out of the loop;
-		}
+  NetworkRequestChannel* chan = (NetworkRequestChannel*)_channel;
+  for(;;) {
+    std::string request = chan->cread();
 
-		process_request(_channel, request);
-	}
+    if (request.compare("quit") == 0) {
+      chan->cwrite("bye");
+      usleep(10000);          // give the other end a bit of time.
+      break;                  // break out of the loop;
+    }
+
+    process_request(chan, request);
+  }
 }
 
 /*--------------------------------------------------------------------------*/
@@ -175,11 +127,33 @@ void handle_process_loop(RequestChannel & _channel) {
 
 
 int main(int argc, char * argv[]) {
-	//  std::cout << "Establishing control channel... " << std::flush;
-	pthread_mutex_init (&channel_mutex, NULL);
-	RequestChannel control_channel("control", RequestChannel::SERVER_SIDE);
-	//  std::cout << "done.\n" << std::flush;
+  int opt = 0;
+  int backlog_buffer = 20;
+  std::string server_port;
+  while ((opt = getopt(argc, argv, "p:b:h")) != -1) {
+    switch (opt) {
+    case 'p':
+      server_port = optarg;
+      break;
+    case 'b':
+      backlog_buffer = atoi(optarg);
+      break;
+    case 'h':
+    default:
+      std::cout << "This program can be invoked with the following flags:"
+                << std::endl;
+      std::cout << "-p [int]: Port number for data server" << std::endl;
+      std::cout << "-b [int]: backlog of the server socket" << std::endl;
+      exit(0);
+    }
+  }
 
-	handle_process_loop(control_channel);
+   // std::cout << "Establishing control channel... " << std::flush;
+  // pthread_mutex_init (&channel_mutex, NULL);
+  std::cout << "Starting server at port " << server_port << std::endl;
+  std::cout << "backlog buffer = " << backlog_buffer << std::endl;
+  NetworkRequestChannel control_channel(server_port, handle_process_loop, backlog_buffer);
+  //  std::cout << "done.\n" << std::flush;
+
+  // handle_process_loop(control_channel);
 }
-
