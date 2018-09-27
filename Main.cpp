@@ -9,11 +9,13 @@
 
 using namespace std;
 
+struct CommandEnv {
+    char last_dir[1024] = ".";
+    vector<pid_t> processes;
+};
+
 int test(string t);
-string runcmd(Command cmd);
-
-
-
+string runcmd(Command cmd, CommandEnv& env);
 
 int main(int argc, char ** argv) {
     bool testflag = false;
@@ -45,6 +47,7 @@ int main(int argc, char ** argv) {
 
     // BEGIN shell
     string t;
+    CommandEnv env;
     string prompt = "\033[0;36m$ \033[0m";
     while (cout << prompt && getline(cin, t)) {
         if (t.empty()) continue;
@@ -53,7 +56,7 @@ int main(int argc, char ** argv) {
             if (testflag) {
                 test(t);
             } else {
-                runcmd(parsecmd(t));
+                runcmd(parsecmd(t), env);
             }
         } catch (ParseException& e) {
             cout << "Parser error: "<< e.what() << endl;
@@ -61,7 +64,7 @@ int main(int argc, char ** argv) {
     }
 }
 
-string runcmd(Command cmd) {
+string runcmd(Command cmd, CommandEnv& env) {
     int size = cmd.arglist.size();
 
     // Setup pipes. Need total of n - 1 pipes for n commands.
@@ -75,7 +78,43 @@ string runcmd(Command cmd) {
     for (int i = 0; i < size; i++) {
         vector<string>& line = cmd.arglist.at(i);
 
+
+        // if special command, execute directly.
+        string program = line.at(0);
+
+        if (program == "cd") {
+            string dir;
+            if (line.size() <= 1) {
+                char* home = getenv("HOME");
+                if (home == NULL) {
+                    cerr << "Cannot change to home directory." << endl;
+                    continue;
+                }
+                dir = home;
+            } else {
+                dir = line.at(1);
+                if (dir == "-") {
+                    dir = env.last_dir;
+                }
+            }
+
+            getcwd(env.last_dir, 1024);
+            int ret = chdir(dir.c_str());
+            if (ret < 0) {
+                if (errno == ENOENT) {
+                    cerr << "Directory " << dir << " does not exist!" << endl;
+                } else {
+                    cerr << "Error changing directory!" << endl;
+                }
+            }
+            continue;
+        }
+        if (program == "exit") {
+            exit(0);
+        }
+
         // Convert to a c-str
+        // TODO memory leak?
         char** arglist = new char*[line.size() + 1];
         arglist[line.size()] = NULL;
 
@@ -85,7 +124,7 @@ string runcmd(Command cmd) {
         }
 
 
-        // Run command!
+        // Run the actual command!
         int fd = -1;
         if (!fork()) {
             // Redirect stdout, unless it's the last command
@@ -94,7 +133,7 @@ string runcmd(Command cmd) {
                 close(fds[i * 2]);
                 close(fds[i * 2 + 1]);
             } else if (!cmd.output_redir.empty()) {
-                // Ask: not closing the file after exec?
+                // TODO: not closing the file after exec?
                 fd = open(cmd.output_redir.c_str(),
                     O_CREAT|O_WRONLY|O_TRUNC|O_CLOEXEC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                 dup2(fd, STDOUT_FILENO);
@@ -110,6 +149,7 @@ string runcmd(Command cmd) {
             }
 
             int ret = execvp(arglist[0], arglist);
+            cerr << "Exec failed." << endl;
             exit(1);
         }
     }
@@ -120,7 +160,10 @@ string runcmd(Command cmd) {
             close(fds[i * 2]);
             close(fds[i * 2 + 1]);
         }
-        wait(NULL);
+
+        if (!cmd.background) {
+            wait(NULL);
+        }
     }
 
     return "";
