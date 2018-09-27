@@ -12,6 +12,7 @@ using namespace std;
 struct CommandEnv {
     char last_dir[1024] = ".";
     vector<pid_t> processes;
+    bool force_exit = false;
 };
 
 string runcmd(Command cmd, CommandEnv& env);
@@ -129,9 +130,12 @@ string runcmd(Command cmd, CommandEnv& env) {
 
         // If exit then just exit the program.
         if (program == "exit") {
+            env.force_exit = true;
+            checkenv(env);
             exit(0);
         }
 
+        // Prints all background processes
         if (program == "jobs") {
             if (env.processes.empty()) {
                 cerr << "No background processes." << endl;
@@ -177,6 +181,7 @@ string runcmd(Command cmd, CommandEnv& env) {
                 dup2(fd, STDIN_FILENO);
             }
 
+            // Do the actual exec
             int ret = execvp(arglist[0], arglist);
             cerr << "Exec failed." << endl;
             exit(1);
@@ -187,6 +192,7 @@ string runcmd(Command cmd, CommandEnv& env) {
             return "";
         }
 
+        // Remember the PID in this round
         pids.push_back(pid);
 
 
@@ -231,11 +237,19 @@ void checkenv(CommandEnv& env) {
         bool exit = false;
         pid_t pid = *iter;
 
-        if (waitpid(pid, &status, WNOHANG) != -1) {
+        if (env.force_exit) {
+            if (waitpid(pid, &status, 0) != -1) {
+                exit = true;
+            } else {
+                cerr << "waitpid (force) failed." << endl;
+            }
+        } else if (waitpid(pid, &status, WNOHANG) != -1) {
             if (WIFEXITED(status)) {
                 cerr << "Process " << pid << " exited " << WEXITSTATUS(status) << '.' << endl;
                 exit = true;
             }
+        } else {
+            cerr << "waitpid (normal) failed." << endl;
         }
 
         // If child exits successfully, erase it from the array.
