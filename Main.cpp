@@ -75,6 +75,9 @@ string runcmd(Command cmd, CommandEnv& env) {
         pipe(fds + i * 2);
     }
 
+    // Setup pids
+    vector<pid_t> pids;
+
     for (int i = 0; i < size; i++) {
         vector<string>& line = cmd.arglist.at(i);
 
@@ -114,7 +117,6 @@ string runcmd(Command cmd, CommandEnv& env) {
         }
 
         // Convert to a c-str
-        // TODO memory leak?
         char** arglist = new char*[line.size() + 1];
         arglist[line.size()] = NULL;
 
@@ -125,16 +127,15 @@ string runcmd(Command cmd, CommandEnv& env) {
 
 
         // Run the actual command!
-        int fd = -1;
-        if (!fork()) {
+        int pid = -1;
+        if (!(pid = fork())) {
             // Redirect stdout, unless it's the last command
             if (i < size - 1) {
                 dup2(fds[i * 2 + 1], STDOUT_FILENO);
                 close(fds[i * 2]);
                 close(fds[i * 2 + 1]);
             } else if (!cmd.output_redir.empty()) {
-                // TODO: not closing the file after exec?
-                fd = open(cmd.output_redir.c_str(),
+                int fd = open(cmd.output_redir.c_str(),
                     O_CREAT|O_WRONLY|O_TRUNC|O_CLOEXEC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                 dup2(fd, STDOUT_FILENO);
             }
@@ -144,7 +145,7 @@ string runcmd(Command cmd, CommandEnv& env) {
                 close(fds[i * 2 - 1]);
                 close(fds[i * 2 - 2]);
             } else if (!cmd.input_redir.empty()) {
-                fd = open(cmd.input_redir.c_str(), O_RDONLY|O_CLOEXEC, 0);
+                int fd = open(cmd.input_redir.c_str(), O_RDONLY|O_CLOEXEC, 0);
                 dup2(fd, STDIN_FILENO);
             }
 
@@ -152,17 +153,34 @@ string runcmd(Command cmd, CommandEnv& env) {
             cerr << "Exec failed." << endl;
             exit(1);
         }
-    }
 
-    for (int i = 0; i < size; i++) {
+        if (pid < 0) {
+            cerr << "Fork failed" << endl;
+            return "";
+        }
+
+        pids.push_back(pid);
+
+
+        // Free memories
+        for (int i = 0; i < line.size() + 1; i++) {
+            delete [] arglist[i];
+        }
+        delete [] arglist;
+    }
+ 
+    for (int i = 0; i < size - 1; i++) {
         // On the parent side, close all pipes
         if (i < size - 1) {
             close(fds[i * 2]);
             close(fds[i * 2 + 1]);
         }
+    }
 
+    for (int i = 0; i < pids.size(); i++) {
+        int status;
         if (!cmd.background) {
-            wait(NULL);
+            waitpid(pids.at(i), &status, 0);
         }
     }
 
