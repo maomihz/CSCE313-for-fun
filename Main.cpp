@@ -14,8 +14,11 @@ struct CommandEnv {
     vector<pid_t> processes;
 };
 
-int test(string t);
 string runcmd(Command cmd, CommandEnv& env);
+void checkenv(CommandEnv& env);
+
+int test(string t);
+
 
 int main(int argc, char ** argv) {
     bool testflag = false;
@@ -50,7 +53,12 @@ int main(int argc, char ** argv) {
     CommandEnv env;
     string prompt = "\033[0;36m$ \033[0m";
     while (cout << prompt && getline(cin, t)) {
-        if (t.empty()) continue;
+        if (t.empty()) {
+            if (!testflag) {
+                checkenv(env);
+            }
+            continue;
+        }
 
         try {
             if (testflag) {
@@ -65,6 +73,8 @@ int main(int argc, char ** argv) {
 }
 
 string runcmd(Command cmd, CommandEnv& env) {
+    checkenv(env);
+
     int size = cmd.arglist.size();
 
     // Setup pipes. Need total of n - 1 pipes for n commands.
@@ -87,6 +97,8 @@ string runcmd(Command cmd, CommandEnv& env) {
 
         if (program == "cd") {
             string dir;
+
+            // If there is no argument for cd, use the HOME variable
             if (line.size() <= 1) {
                 char* home = getenv("HOME");
                 if (home == NULL) {
@@ -95,12 +107,14 @@ string runcmd(Command cmd, CommandEnv& env) {
                 }
                 dir = home;
             } else {
+                // If the argument is "-", change to the last directory
                 dir = line.at(1);
                 if (dir == "-") {
                     dir = env.last_dir;
                 }
             }
 
+            // Store the old pwd before changing
             getcwd(env.last_dir, 1024);
             int ret = chdir(dir.c_str());
             if (ret < 0) {
@@ -112,11 +126,24 @@ string runcmd(Command cmd, CommandEnv& env) {
             }
             continue;
         }
+
+        // If exit then just exit the program.
         if (program == "exit") {
             exit(0);
         }
 
-        // Convert to a c-str
+        if (program == "jobs") {
+            if (env.processes.empty()) {
+                cerr << "No background processes." << endl;
+            }
+            for (pid_t pid : env.processes) {
+                cerr << "PID = " << pid << endl;
+            }
+            continue;
+        }
+
+
+        // Convert vector to a c-str argument list
         char** arglist = new char*[line.size() + 1];
         arglist[line.size()] = NULL;
 
@@ -131,18 +158,19 @@ string runcmd(Command cmd, CommandEnv& env) {
         if (!(pid = fork())) {
             // Redirect stdout, unless it's the last command
             if (i < size - 1) {
-                dup2(fds[i * 2 + 1], STDOUT_FILENO);
                 close(fds[i * 2]);
+                dup2(fds[i * 2 + 1], STDOUT_FILENO);
                 close(fds[i * 2 + 1]);
             } else if (!cmd.output_redir.empty()) {
                 int fd = open(cmd.output_redir.c_str(),
                     O_CREAT|O_WRONLY|O_TRUNC|O_CLOEXEC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                 dup2(fd, STDOUT_FILENO);
             }
+
             // Redirect stdin, unless it's the first command
             if (i > 0) {
-                dup2(fds[i * 2 - 2], STDIN_FILENO);
                 close(fds[i * 2 - 1]);
+                dup2(fds[i * 2 - 2], STDIN_FILENO);
                 close(fds[i * 2 - 2]);
             } else if (!cmd.input_redir.empty()) {
                 int fd = open(cmd.input_redir.c_str(), O_RDONLY|O_CLOEXEC, 0);
@@ -169,23 +197,56 @@ string runcmd(Command cmd, CommandEnv& env) {
         delete [] arglist;
     }
  
+
+    // On the parent side, close all pipes
     for (int i = 0; i < size - 1; i++) {
-        // On the parent side, close all pipes
-        if (i < size - 1) {
-            close(fds[i * 2]);
-            close(fds[i * 2 + 1]);
-        }
+        close(fds[i * 2]);
+        close(fds[i * 2 + 1]);
     }
 
+
+
+    // Wait for processes
     for (int i = 0; i < pids.size(); i++) {
         int status;
         if (!cmd.background) {
-            waitpid(pids.at(i), &status, 0);
+            if (waitpid(pids.at(i), &status, 0) == -1) {
+                cerr << "waitpid failed." << endl;
+            }
+        } else {
+            env.processes.push_back(pids.at(i));
         }
     }
 
     return "";
 }
+
+
+// Check background processes, reap them when necessary.
+void checkenv(CommandEnv& env) {
+    auto iter = env.processes.begin();
+
+    while (iter != env.processes.end()) {
+        int status;
+        bool exit = false;
+        pid_t pid = *iter;
+
+        if (waitpid(pid, &status, WNOHANG) != -1) {
+            if (WIFEXITED(status)) {
+                cerr << "Process " << pid << " exited " << WEXITSTATUS(status) << '.' << endl;
+                exit = true;
+            }
+        }
+
+        // If child exits successfully, erase it from the array.
+        if (exit) {
+            iter = env.processes.erase(iter);
+        } else {
+            iter++;
+        }
+    }
+}
+
 
 int test(string t) {
     cout << "Parsecmd: @" << t << "@" << endl;
