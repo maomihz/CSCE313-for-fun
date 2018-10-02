@@ -54,6 +54,7 @@ int main(int argc, char ** argv) {
     CommandEnv env;
     string prompt = "\033[0;36m$ \033[0m";
     while (cout << prompt && getline(cin, t)) {
+        // If nothing is read from the line
         if (t.empty()) {
             if (!testflag) {
                 checkenv(env);
@@ -203,7 +204,6 @@ string runcmd(Command cmd, CommandEnv& env) {
         delete [] arglist;
     }
  
-
     // On the parent side, close all pipes
     for (int i = 0; i < size - 1; i++) {
         close(fds[i * 2]);
@@ -218,6 +218,7 @@ string runcmd(Command cmd, CommandEnv& env) {
         if (!cmd.background) {
             if (waitpid(pids.at(i), &status, 0) == -1) {
                 cerr << "waitpid failed." << endl;
+                continue;
             }
         } else {
             env.processes.push_back(pids.at(i));
