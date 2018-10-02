@@ -87,9 +87,6 @@ string runcmd(Command cmd, CommandEnv& env) {
         pipe(fds + i * 2);
     }
 
-    // Setup pids
-    vector<pid_t> pids;
-
     for (int i = 0; i < size; i++) {
         vector<string>& line = cmd.arglist.at(i);
 
@@ -159,8 +156,8 @@ string runcmd(Command cmd, CommandEnv& env) {
 
 
         // Run the actual command!
-        int pid = -1;
-        if (!(pid = fork())) {
+        int pid = fork();
+        if (!pid) {
             // Redirect stdout, unless it's the last command
             if (i < size - 1) {
                 close(fds[i * 2]);
@@ -186,15 +183,31 @@ string runcmd(Command cmd, CommandEnv& env) {
             int ret = execvp(arglist[0], arglist);
             cerr << "Exec failed." << endl;
             exit(1);
-        }
-
-        if (pid < 0) {
+        } else if (pid < 0) {
             cerr << "Fork failed" << endl;
             return "";
         }
 
-        // Remember the PID in this round
-        pids.push_back(pid);
+        // On the parent side, close pipes
+        // if (i < size - 1) {
+        //     close(fds[i * 2]);
+        //     close(fds[i * 2 + 1]);
+        // }
+        if (i > 0) {
+            close(fds[i * 2 - 1]);
+            close(fds[i * 2 - 2]);
+        }
+
+        // Wait for background processes
+        int status;
+        if (!cmd.background) {
+            if (waitpid(pid, &status, 0) == -1) {
+                cerr << "waitpid failed." << endl;
+                continue;
+            }
+        } else {
+            env.processes.push_back(pid);
+        }
 
 
         // Free memories
@@ -204,27 +217,6 @@ string runcmd(Command cmd, CommandEnv& env) {
         delete [] arglist;
     }
  
-    // On the parent side, close all pipes
-    for (int i = 0; i < size - 1; i++) {
-        close(fds[i * 2]);
-        close(fds[i * 2 + 1]);
-    }
-
-
-
-    // Wait for processes
-    for (int i = 0; i < pids.size(); i++) {
-        int status;
-        if (!cmd.background) {
-            if (waitpid(pids.at(i), &status, 0) == -1) {
-                cerr << "waitpid failed." << endl;
-                continue;
-            }
-        } else {
-            env.processes.push_back(pids.at(i));
-        }
-    }
-
     return "";
 }
 
@@ -238,19 +230,22 @@ void checkenv(CommandEnv& env) {
         bool exit = false;
         pid_t pid = *iter;
 
+        // Force exit will wait for the child to complete
         if (env.force_exit) {
-            if (waitpid(pid, &status, 0) != -1) {
+            int ret = waitpid(pid, &status, 0);
+            if (ret > 0) {
                 exit = true;
             } else {
                 cerr << "waitpid (force) failed." << endl;
             }
-        } else if (waitpid(pid, &status, WNOHANG) != -1) {
-            if (WIFEXITED(status)) {
+        } else {
+            int ret = waitpid(pid, &status, WNOHANG);
+            if (ret > 0) {
                 cerr << "Process " << pid << " exited " << WEXITSTATUS(status) << '.' << endl;
                 exit = true;
+            } else if (ret == -1) {
+                cerr << "waitpid (normal) failed for " << pid << '.' << endl;
             }
-        } else {
-            cerr << "waitpid (normal) failed." << endl;
         }
 
         // If child exits successfully, erase it from the array.
