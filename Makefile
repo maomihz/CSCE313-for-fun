@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -g -std=c++11
+CFLAGS = -g -std=c++11 -Wall -Wextra
 
 OBJS = Main.o parser.o command.o
 
@@ -9,7 +9,7 @@ all: main
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 main: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lreadline
 
 command.cpp: command.h
 

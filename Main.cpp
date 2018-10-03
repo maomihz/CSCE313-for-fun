@@ -5,6 +5,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <readline/readline.h>
+#include <readline/history.h>
+
 #include "parser.h"
 
 using namespace std;
@@ -50,23 +53,26 @@ int main(int argc, char ** argv) {
 
 
     // BEGIN shell
-    string t;
     CommandEnv env;
     string prompt = "\033[0;36m$ \033[0m";
-    while (cout << prompt && getline(cin, t)) {
+    char* t;
+    while ((t = readline(prompt.c_str())) != nullptr) {
         // If nothing is read from the line
-        if (t.empty()) {
+        if (strlen(t) <= 0) {
             if (!testflag) {
                 checkenv(env);
             }
             continue;
         }
 
+        add_history(t);
+        string t_str(t);
+
         try {
             if (testflag) {
-                test(t);
+                test(t_str);
             } else {
-                runcmd(parsecmd(t), env);
+                runcmd(parsecmd(t_str), env);
             }
         } catch (ParseException& e) {
             cout << "Parser error: "<< e.what() << endl;
@@ -87,10 +93,10 @@ string runcmd(Command cmd, CommandEnv& env) {
         pipe(fds + i * 2);
     }
 
+    // Iterate and run all commands
     for (int i = 0; i < size; i++) {
         vector<string>& line = cmd.arglist.at(i);
-
-
+        
         // if special command, execute directly.
         string program = line.at(0);
 
