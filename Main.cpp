@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -20,6 +21,7 @@ struct CommandEnv {
 
 string runcmd(Command cmd, CommandEnv& env);
 void checkenv(CommandEnv& env);
+char* getprompt();
 
 int test(string t);
 
@@ -54,10 +56,11 @@ int main(int argc, char ** argv) {
 
     // BEGIN shell
     CommandEnv env;
-    string prompt = "\033[0;36m$ \033[0m";
     char* t;
-    while ((t = readline(prompt.c_str())) != nullptr) {
+    char* prompt;
+    while ((t = readline(prompt = getprompt())) != nullptr) {
         // If nothing is read from the line
+        delete [] prompt;
         if (strlen(t) <= 0) {
             if (!testflag) {
                 checkenv(env);
@@ -262,6 +265,28 @@ void checkenv(CommandEnv& env) {
         }
     }
 }
+
+
+char* getprompt() {
+    char login[64];
+    getlogin_r(login, sizeof(login) - 1);
+
+    char cwd[256];
+    getcwd(cwd, sizeof(cwd) - 1);
+
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+
+    char* prompt = new char[1024];
+
+    sprintf(prompt, "\n\033[1;35m# \033[0;32m%s \033[0min \033[0;33m%s\033[0m [%02d:%02d:%02d]\n\033[0;36m$ \033[0m", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    return prompt;
+}
+
+
+
+
+
 
 
 int test(string t) {
