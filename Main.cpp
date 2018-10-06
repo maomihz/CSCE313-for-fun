@@ -1,8 +1,10 @@
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <time.h>
 
@@ -58,7 +60,7 @@ int main(int argc, char ** argv) {
     CommandEnv env;
     char* t;
     char* prompt;
-    while ((t = readline(prompt = getprompt())) != nullptr) {
+    while (printf("%s", prompt = getprompt()) && (t = readline("")) != nullptr) {
         // If nothing is read from the line
         delete [] prompt;
         if (strlen(t) <= 0) {
@@ -87,6 +89,44 @@ string runcmd(Command cmd, CommandEnv& env) {
     checkenv(env);
 
     int size = cmd.arglist.size();
+
+    // Do replacement on all commands
+    for (pair<int, int> replacement : cmd.replace_parts) {
+        string replacement_cmd_str = cmd.arglist.at(replacement.first).at(replacement.second);
+        size_t replacement_start = replacement_cmd_str.find("$(");
+        size_t replacement_end = replacement_cmd_str.find(")", replacement_start+1);
+
+
+        string subcmd = replacement_cmd_str.substr(replacement_start + 2, replacement_end - replacement_start - 2);
+
+        Command replacement_cmd = parsecmd(subcmd);
+        pid_t subshell_pid;
+        int subshell_fd[2];
+        pipe(subshell_fd);
+
+        if (!(subshell_pid = fork())) {
+            dup2(subshell_fd[1], 1);
+            runcmd(replacement_cmd, env);
+            close(subshell_fd[0]);
+            close(subshell_fd[1]);
+            exit(0);
+        }
+
+        char output[512];
+        ostringstream ss;
+        close(subshell_fd[1]);
+
+        int loc;
+        while ((loc = read(subshell_fd[0], output, 511)) > 0) {
+            output[loc - 1] = '\0';
+            ss << output;
+        }
+        close(subshell_fd[0]);
+
+        string output_s = ss.str();
+        replacement_cmd_str.replace(replacement_start, replacement_end - replacement_start + 1, output_s);
+        cmd.arglist.at(replacement.first).at(replacement.second) = replacement_cmd_str;
+    }
 
     // Setup pipes. Need total of n - 1 pipes for n commands.
     // (n - 1) * 2 file descriptors
@@ -126,11 +166,7 @@ string runcmd(Command cmd, CommandEnv& env) {
             getcwd(env.last_dir, 1024);
             int ret = chdir(dir.c_str());
             if (ret < 0) {
-                if (errno == ENOENT) {
-                    cerr << "Directory " << dir << " does not exist!" << endl;
-                } else {
-                    cerr << "Error changing directory!" << endl;
-                }
+                perror("Error changing directory!");
             }
             continue;
         }
@@ -153,12 +189,20 @@ string runcmd(Command cmd, CommandEnv& env) {
             continue;
         }
 
+        // Inject arguments
+        if (program == "ls") {
+            line.insert(line.begin() + 1, "--color=auto");
+        }
+        if (program == "grep") {
+            line.insert(line.begin() + 1, "--color=auto");
+        }
+
 
         // Convert vector to a c-str argument list
         char** arglist = new char*[line.size() + 1];
         arglist[line.size()] = NULL;
 
-        for (int i = 0; i < line.size(); i++) {
+        for (size_t i = 0; i < line.size(); i++) {
             arglist[i] = new char[line.at(i).size() + 1];
             strcpy(arglist[i], line.at(i).c_str());
         }
@@ -189,11 +233,11 @@ string runcmd(Command cmd, CommandEnv& env) {
             }
 
             // Do the actual exec
-            int ret = execvp(arglist[0], arglist);
-            cerr << "Exec failed." << endl;
+            execvp(arglist[0], arglist);
+            perror("Exec failed");
             exit(1);
         } else if (pid < 0) {
-            cerr << "Fork failed" << endl;
+            perror("Fork failed");
             return "";
         }
 
@@ -211,7 +255,7 @@ string runcmd(Command cmd, CommandEnv& env) {
         int status;
         if (!cmd.background) {
             if (waitpid(pid, &status, 0) == -1) {
-                cerr << "waitpid failed." << endl;
+                perror("waitpid failed");
                 continue;
             }
         } else {
@@ -220,7 +264,7 @@ string runcmd(Command cmd, CommandEnv& env) {
 
 
         // Free memories
-        for (int i = 0; i < line.size() + 1; i++) {
+        for (size_t i = 0; i < line.size() + 1; i++) {
             delete [] arglist[i];
         }
         delete [] arglist;
@@ -245,7 +289,7 @@ void checkenv(CommandEnv& env) {
             if (ret > 0) {
                 exit = true;
             } else {
-                cerr << "waitpid (force) failed." << endl;
+                perror("waitpid (force) failed.");
             }
         } else {
             int ret = waitpid(pid, &status, WNOHANG);
@@ -253,7 +297,7 @@ void checkenv(CommandEnv& env) {
                 cerr << "Process " << pid << " exited " << WEXITSTATUS(status) << '.' << endl;
                 exit = true;
             } else if (ret == -1) {
-                cerr << "waitpid (normal) failed for " << pid << '.' << endl;
+                perror("waitpid (normal) failed");
             }
         }
 
@@ -279,7 +323,9 @@ char* getprompt() {
 
     char* prompt = new char[1024];
 
-    sprintf(prompt, "\n\033[1;35m# \033[0;32m%s \033[0min \033[0;33m%s\033[0m [%02d:%02d:%02d]\n\033[0;36m$ \033[0m", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    sprintf(prompt, "\n\033[1;35m# \033[32m%s \033[0min \033[33m%s\033[0m [%02d:%02d:%02d]\n\033[0;36m$ \033[0m", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    // sprintf(prompt, "\n%s %s %d %d %d", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    // printf(prompt);
     return prompt;
 }
 

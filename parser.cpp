@@ -57,6 +57,7 @@ Command parsecmd(const string cmdstr) {
                 skip = true;
                 if (c == ')') {
                     skip = false;
+                    cmd.replace_parts.push_back(make_pair(cmd.arglist.size(), arglist.size()));
                 }
             }
         } else if (c == '"' || c == '\'') {

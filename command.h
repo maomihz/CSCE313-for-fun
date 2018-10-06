@@ -9,6 +9,8 @@ public:
     string input_redir;
     string output_redir;
     bool background = false;
+
+    vector<pair<int, int> > replace_parts;
 };
 
 ostream& operator<<(ostream& os, const Command& cmd);
