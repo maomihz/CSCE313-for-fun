@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <time.h>
+#include <string.h>
 
 #include "parser.h"
 
@@ -245,6 +246,10 @@ string runcmd(Command cmd, CommandEnv& env) {
             } else if (!cmd.output_redir.empty()) {
                 int fd = open(cmd.output_redir.c_str(),
                     O_CREAT|O_WRONLY|O_TRUNC|O_CLOEXEC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+                if (fd < 0) {
+                    perror("open");
+                    exit(1);
+                }
                 dup2(fd, STDOUT_FILENO);
             }
 
@@ -255,6 +260,10 @@ string runcmd(Command cmd, CommandEnv& env) {
                 close(fds[i * 2 - 2]);
             } else if (!cmd.input_redir.empty()) {
                 int fd = open(cmd.input_redir.c_str(), O_RDONLY|O_CLOEXEC, 0);
+                if (fd < 0) {
+                    perror("open");
+                    exit(1);
+                }
                 dup2(fd, STDIN_FILENO);
             }
 

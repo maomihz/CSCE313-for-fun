@@ -9,7 +9,7 @@ all: main
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 main: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lreadline
+	$(CC) $(CFLAGS) -o $@ $^
 
 command.cpp: command.h
 
