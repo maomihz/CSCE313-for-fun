@@ -8,9 +8,6 @@
 #include <fcntl.h>
 #include <time.h>
 
-#include <readline/readline.h>
-#include <readline/history.h>
-
 #include "parser.h"
 
 using namespace std;
@@ -19,11 +16,12 @@ struct CommandEnv {
     char last_dir[1024] = ".";
     vector<pid_t> processes;
     bool force_exit = false;
+    bool testflag = false;
 };
 
 string runcmd(Command cmd, CommandEnv& env);
 void checkenv(CommandEnv& env);
-char* getprompt();
+string getprompt(string prompt_template);
 
 int test(string t);
 
@@ -31,16 +29,23 @@ int test(string t);
 int main(int argc, char ** argv) {
     bool testflag = false;
     bool helpflag = false;
+    string prompt_template = "$ ";
     char c;
 
     // Parse arguments. When specifying -t it runs test function and exit.
-    while ((c = getopt(argc, argv, "th")) != -1) {
+    while ((c = getopt(argc, argv, "thp:P")) != -1) {
         switch (c) {
         case 't':
-            testflag = true;
+            prompt_template = "";
             break;
         case 'h':
             helpflag = true;
+            break;
+        case 'p':
+            prompt_template = optarg;
+            break;
+        case 'P':
+            prompt_template = "\n# (user) at (cwd) [(time)] \n$ ";
             break;
         case '?':
             return 1;
@@ -58,23 +63,25 @@ int main(int argc, char ** argv) {
 
     // BEGIN shell
     CommandEnv env;
-    char* t;
-    char* prompt;
-    while (printf("%s", prompt = getprompt()) && (t = readline("")) != nullptr) {
+    string t;
+    while (true) {
+        cout << getprompt(prompt_template);
+        getline(cin, t);
+        if (!cin) {
+            break;
+        }
         // If nothing is read from the line
-        delete [] prompt;
-        if (strlen(t) <= 0) {
+        if (t.size() <= 0) {
             if (!testflag) {
                 checkenv(env);
             }
             continue;
         }
 
-        add_history(t);
         string t_str(t);
 
         try {
-            if (testflag) {
+            if (env.testflag) {
                 test(t_str);
             } else {
                 runcmd(parsecmd(t_str), env);
@@ -90,7 +97,7 @@ string runcmd(Command cmd, CommandEnv& env) {
 
     int size = cmd.arglist.size();
 
-    // Do replacement on all commands
+    // Do $() replacement
     for (pair<int, int> replacement : cmd.replace_parts) {
         string replacement_cmd_str = cmd.arglist.at(replacement.first).at(replacement.second);
         size_t replacement_start = replacement_cmd_str.find("$(");
@@ -122,6 +129,9 @@ string runcmd(Command cmd, CommandEnv& env) {
             ss << output;
         }
         close(subshell_fd[0]);
+
+        int status;
+        waitpid(subshell_pid, &status, 0);
 
         string output_s = ss.str();
         replacement_cmd_str.replace(replacement_start, replacement_end - replacement_start + 1, output_s);
@@ -189,6 +199,22 @@ string runcmd(Command cmd, CommandEnv& env) {
             continue;
         }
 
+        // Parser debug mode
+        if (program == "parser") {
+            pid_t parser_pid;
+            if (!(parser_pid = fork())) {
+                env.testflag = true;
+                return "";
+            } else {
+                int status;
+                if (waitpid(parser_pid, &status, 0) < 1) {
+                    perror("wait parser");
+                    exit(1);
+                }
+                continue;
+            }
+        }
+
         // Inject arguments
         if (program == "ls") {
             line.insert(line.begin() + 1, "--color=auto");
@@ -241,11 +267,6 @@ string runcmd(Command cmd, CommandEnv& env) {
             return "";
         }
 
-        // On the parent side, close pipes
-        // if (i < size - 1) {
-        //     close(fds[i * 2]);
-        //     close(fds[i * 2 + 1]);
-        // }
         if (i > 0) {
             close(fds[i * 2 - 1]);
             close(fds[i * 2 - 2]);
@@ -311,22 +332,59 @@ void checkenv(CommandEnv& env) {
 }
 
 
-char* getprompt() {
+string getprompt(string prompt_template) {
     char login[64];
     getlogin_r(login, sizeof(login) - 1);
+    string login_s(login);
+    login_s = "\033[1;35m" + login_s + "\033[0m";
 
     char cwd[256];
     getcwd(cwd, sizeof(cwd) - 1);
+    string cwd_s(cwd);
+    cwd_s = "\033[33m" + cwd_s + "\033[0m";
 
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
+    char timenow[256];
+    sprintf(timenow, "%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    string time_s(timenow);
 
-    char* prompt = new char[1024];
+    char datenow[256];
+    sprintf(datenow, "%04d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon, tm.tm_mday);
+    string date_s(datenow);
 
-    sprintf(prompt, "\n\033[1;35m# \033[32m%s \033[0min \033[33m%s\033[0m [%02d:%02d:%02d]\n\033[0;36m$ \033[0m", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    // sprintf(prompt, "\n%s %s %d %d %d", login, cwd, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    // printf(prompt);
-    return prompt;
+    size_t user_l = prompt_template.find("(user)");
+    if (user_l != string::npos) {
+        prompt_template.replace(user_l, 6, login_s);
+    }
+    size_t cwd_l = prompt_template.find("(cwd)");
+    if (cwd_l != string::npos) {
+        prompt_template.replace(cwd_l, 5, cwd_s);
+    }
+    size_t time_l = prompt_template.find("(time)");
+    if (time_l != string::npos) {
+        prompt_template.replace(time_l, 6, time_s);
+    }
+    size_t date_l = prompt_template.find("(date)");
+    if (date_l != string::npos) {
+        prompt_template.replace(date_l, 6, date_s);
+    }
+
+    while (true) {
+        size_t newline_l = prompt_template.find("\\n");
+        if (newline_l != string::npos) {
+            prompt_template.replace(newline_l, 2, "\n");
+        } else {
+            break;
+        }
+    }
+
+    size_t dollar_l = prompt_template.find("$");
+    if (dollar_l != string::npos) {
+        prompt_template.replace(dollar_l, 1, "\033[36m$\033[0m");
+    }
+
+    return prompt_template;
 }
 
 
