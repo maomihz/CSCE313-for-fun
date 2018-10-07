@@ -114,6 +114,7 @@ string runcmd(Command cmd, CommandEnv& env) {
 
         if (!(subshell_pid = fork())) {
             dup2(subshell_fd[1], 1);
+            env.processes.clear();
             runcmd(replacement_cmd, env);
             close(subshell_fd[0]);
             close(subshell_fd[1]);
@@ -205,6 +206,7 @@ string runcmd(Command cmd, CommandEnv& env) {
             pid_t parser_pid;
             if (!(parser_pid = fork())) {
                 env.testflag = true;
+                env.processes.clear();
                 return "";
             } else {
                 int status;
