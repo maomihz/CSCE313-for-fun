@@ -4,11 +4,13 @@
 #include <stdio.h>
 #include <queue>
 #include <string>
+#include <pthread.h>
 using namespace std;
 
 class SafeBuffer {
 private:
-	queue<string> q;	
+	queue<string> q;
+    pthread_mutex_t mutex;	
 public:
     SafeBuffer();
 	~SafeBuffer();
