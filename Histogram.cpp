@@ -16,14 +16,21 @@ Histogram::Histogram(){
 	names.push_back ("John Smith");
 	names.push_back ("Jane Smith");
 	names.push_back ("Joe Smith");
+
+	pthread_mutex_init(&mutex, NULL);
+}
+Histogram::~Histogram() {
+	pthread_mutex_destroy(&mutex);
 }
 void Histogram::update (string request, string response){
 	/*
 	Is this function thread-safe???
 	Make necessary modifications to make it thread-safe
 	*/
+	pthread_mutex_lock(&mutex);
 	int person_index = map [request];
 	hist [person_index][stoi(response) / 10] ++;
+	pthread_mutex_unlock(&mutex);
 }
 void Histogram::print(){
 	cout << setw(10) << right << "Range";
