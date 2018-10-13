@@ -33,10 +33,12 @@
 #include "reqchannel.h"
 #include "SafeBuffer.h"
 #include "Histogram.h"
+#include "client.h"
 using namespace std;
 
 
 void* request_thread_function(void* arg) {
+    client_info* client = (client_info*)arg;
 	/*
 		Fill in this function.
 
@@ -51,12 +53,13 @@ void* request_thread_function(void* arg) {
 		create 3 copies of this function, one for each "patient".
 	 */
 
-	for(;;) {
-
+	for(int i = 0; i < client->n; i++) {
+        client->buffer->push(client->data);
 	}
 }
 
 void* worker_thread_function(void* arg) {
+    worker_info* worker = (worker_info*)arg;
     /*
 		Fill in this function. 
 
@@ -72,7 +75,20 @@ void* worker_thread_function(void* arg) {
 		whether you used "new" for it.
      */
 
+    worker->chan->cwrite("newchannel");
+    string s = worker->chan->cread();
+    RequestChannel *workerChannel = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
     while(true) {
+        string request = worker->buffer->pop();
+        workerChannel->cwrite(request);
+
+        if(request == "quit") {
+            delete workerChannel;
+            break;
+        }else{
+            string response = workerChannel->cread();
+            worker->hist->update (request, response);
+        }
 
     }
 }
@@ -113,10 +129,23 @@ int main(int argc, char * argv[]) {
 		SafeBuffer request_buffer;
 		Histogram hist;
 
-        for(int i = 0; i < n; ++i) {
-            request_buffer.push("data John Smith");
-            request_buffer.push("data Jane Smith");
-            request_buffer.push("data Joe Smith");
+        // Create client
+        client_info request_clients[3];
+        request_clients[0].data = "data John Smith";
+        request_clients[1].data = "data Jane Smith";
+        request_clients[2].data = "data Joe Smith";
+
+        // Create request threads
+        pthread_t request_threads[3];
+
+        for (int i = 0; i < 3; i++) {
+            request_clients[i].buffer = &request_buffer;
+            request_clients[i].n = n;
+            pthread_create(&request_threads[i], NULL, request_thread_function, &request_clients[i]);
+        }
+        for (int i = 0; i < 3; i++) {
+            request_clients[i].buffer = &request_buffer;
+            pthread_join(request_threads[i], NULL);
         }
         cout << "Done populating request buffer" << endl;
 
@@ -126,23 +155,22 @@ int main(int argc, char * argv[]) {
         }
         cout << "done." << endl;
 
-	
-        chan->cwrite("newchannel");
-		string s = chan->cread ();
-        RequestChannel *workerChannel = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
 
-        while(true) {
-            string request = request_buffer.pop();
-			workerChannel->cwrite(request);
+        // Create workers
+        worker_info worker_clients;
+        worker_clients.chan = chan;
+        worker_clients.buffer = &request_buffer;
+        worker_clients.hist = &hist;
 
-			if(request == "quit") {
-			   	delete workerChannel;
-                break;
-            }else{
-				string response = workerChannel->cread();
-				hist.update (request, response);
-			}
+        pthread_t worker_threads[w];
+        for (int i = 0; i < w; i++) {
+            pthread_create(&worker_threads[i], NULL, worker_thread_function, &worker_clients);
         }
+        for (int i = 0; i < w; i++) {
+            pthread_join(worker_threads[i], NULL);
+        }
+
+	
         chan->cwrite ("quit");
         delete chan;
         cout << "All Done!!!" << endl; 
