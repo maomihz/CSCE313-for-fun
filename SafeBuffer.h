@@ -9,12 +9,12 @@ using namespace std;
 
 class SafeBuffer {
 private:
-	queue<string> q;
-    pthread_mutex_t mutex;	
+    queue<string> q;
+    pthread_mutex_t mutex;
 public:
     SafeBuffer();
-	~SafeBuffer();
-	int size();
+    ~SafeBuffer();
+    int size();
     void push (string str);
     string pop();
 };
