@@ -125,6 +125,9 @@ int main(int argc, char * argv[]) {
 
         SafeBuffer request_buffer;
         Histogram hist;
+        struct timeval tp_start, tp_end;
+        // Start timer!
+        gettimeofday(&tp_start, 0);
 
         // Populate requests into the buffer
         const int CLIENT_COUNT = 3;
@@ -177,7 +180,19 @@ int main(int argc, char * argv[]) {
         chan->cwrite ("quit");
         delete chan;
         cout << "All Done!!!" << endl; 
+        // End timer!
+        gettimeofday(&tp_end, 0);
 
         hist.print ();
+
+        // Compute running time
+        long sec = tp_end.tv_sec - tp_start.tv_sec;
+        long musec = tp_end.tv_usec - tp_start.tv_usec;
+        if (musec < 0) {
+            musec += (int)1e6;
+            sec--;
+        }
+        stringstream ss;
+        cout << "Time taken: [sec = "<< sec <<", musec = "<<musec<< "]" << endl;
     }
 }
