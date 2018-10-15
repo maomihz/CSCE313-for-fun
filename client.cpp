@@ -75,18 +75,15 @@ void* worker_thread_function(void* arg) {
         whether you used "new" for it.
      */
 
-    worker->chan->cwrite("newchannel");
-    string s = worker->chan->cread();
-    RequestChannel *workerChannel = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
     while(true) {
         string request = worker->buffer->pop();
-        workerChannel->cwrite(request);
+        worker->chan->cwrite(request);
 
         if(request == "quit") {
-            delete workerChannel;
+            delete worker->chan;
             break;
-        }else{
-            string response = workerChannel->cread();
+        } else {
+            string response = worker->chan->cread();
             worker->hist->update (request, response);
         }
 
@@ -117,7 +114,7 @@ int main(int argc, char * argv[]) {
         execl("dataserver", (char*) NULL);
     }
     else {
-
+        // Print initial info, create control channel and other data structures
         cout << "n == " << n << endl;
         cout << "w == " << w << endl;
 
@@ -129,22 +126,22 @@ int main(int argc, char * argv[]) {
         SafeBuffer request_buffer;
         Histogram hist;
 
-        // Create client
-        client_info request_clients[3];
+        // Populate requests into the buffer
+        const int CLIENT_COUNT = 3;
+        client_info request_clients[CLIENT_COUNT];
         request_clients[0].data = "data John Smith";
         request_clients[1].data = "data Jane Smith";
         request_clients[2].data = "data Joe Smith";
 
         // Create request threads
-        pthread_t request_threads[3];
+        pthread_t request_threads[CLIENT_COUNT];
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < CLIENT_COUNT; i++) {
             request_clients[i].buffer = &request_buffer;
             request_clients[i].n = n;
             pthread_create(&request_threads[i], NULL, request_thread_function, &request_clients[i]);
         }
-        for (int i = 0; i < 3; i++) {
-            request_clients[i].buffer = &request_buffer;
+        for (int i = 0; i < CLIENT_COUNT; i++) {
             pthread_join(request_threads[i], NULL);
         }
         cout << "Done populating request buffer" << endl;
@@ -157,20 +154,26 @@ int main(int argc, char * argv[]) {
 
 
         // Create workers
-        worker_info worker_clients;
-        worker_clients.chan = chan;
-        worker_clients.buffer = &request_buffer;
-        worker_clients.hist = &hist;
-
+        worker_info worker_clients[w];
         pthread_t worker_threads[w];
+
         for (int i = 0; i < w; i++) {
-            pthread_create(&worker_threads[i], NULL, worker_thread_function, &worker_clients);
+            worker_clients[i].buffer = &request_buffer;
+            worker_clients[i].hist = &hist;
+
+            // Create a new channel
+            chan->cwrite("newchannel");
+            string s = chan->cread();
+            worker_clients[i].chan = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
+
+            pthread_create(&worker_threads[i], NULL, worker_thread_function, &worker_clients[i]);
         }
         for (int i = 0; i < w; i++) {
             pthread_join(worker_threads[i], NULL);
         }
 
-    
+
+        // Delete control channels
         chan->cwrite ("quit");
         delete chan;
         cout << "All Done!!!" << endl; 
